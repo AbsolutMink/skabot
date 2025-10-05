@@ -323,65 +323,65 @@ class ModuloAnalisisSeñales:
                 confidence = 0.75
             
             # 2. Estocástico - Cruces en zonas extremas
-            elif not signal_direction:
+            if signal_direction is None:
                 if current['stoch_k'] < TradingConfig.STOCH_OVERSOLD:
                     if previous['stoch_k'] < previous['stoch_d'] and current['stoch_k'] > current['stoch_d']:
                         signal_direction = "BUY"
                         signal_source = SignalSource.STOCHASTIC
                         signal_description = f"Cruce alcista del Estocástico en sobreventa"
                         confidence = 0.8
-                        
+
                 elif current['stoch_k'] > TradingConfig.STOCH_OVERBOUGHT:
                     if previous['stoch_k'] > previous['stoch_d'] and current['stoch_k'] < current['stoch_d']:
                         signal_direction = "SELL"
                         signal_source = SignalSource.STOCHASTIC
                         signal_description = f"Cruce bajista del Estocástico en sobrecompra"
                         confidence = 0.8
-            
+
             # 3. MACD - Cruces con línea de señal
-            elif not signal_direction:
+            if signal_direction is None:
                 if previous['macd'] < previous['macd_signal'] and current['macd'] > current['macd_signal']:
                     signal_direction = "BUY"
                     signal_source = SignalSource.MACD
                     signal_description = f"Cruce alcista del MACD"
                     confidence = 0.75
-                    
+
                 elif previous['macd'] > previous['macd_signal'] and current['macd'] < current['macd_signal']:
                     signal_direction = "SELL"
                     signal_source = SignalSource.MACD
                     signal_description = f"Cruce bajista del MACD"
                     confidence = 0.75
-            
+
             # 4. Cruce de EMAs
-            elif not signal_direction:
+            if signal_direction is None:
                 if previous['ema_fast'] < previous['ema_slow'] and current['ema_fast'] > current['ema_slow']:
                     signal_direction = "BUY"
                     signal_source = SignalSource.EMA_CROSS
                     signal_description = f"EMA{TradingConfig.EMA_FAST} cruzó por encima de EMA{TradingConfig.EMA_SLOW}"
                     confidence = 0.7
-                    
+
                 elif previous['ema_fast'] > previous['ema_slow'] and current['ema_fast'] < current['ema_slow']:
                     signal_direction = "SELL"
                     signal_source = SignalSource.EMA_CROSS
                     signal_description = f"EMA{TradingConfig.EMA_FAST} cruzó por debajo de EMA{TradingConfig.EMA_SLOW}"
                     confidence = 0.7
-            
+
             # 5. Bandas de Bollinger - Breakouts
-            elif not signal_direction:
+            if signal_direction is None:
                 if current['close'] > current['bb_upper'] and previous['close'] <= previous['bb_upper']:
                     signal_direction = "BUY"
                     signal_source = SignalSource.BOLLINGER
                     signal_description = f"Ruptura alcista de Banda de Bollinger superior"
                     confidence = 0.65
-                    
+
                 elif current['close'] < current['bb_lower'] and previous['close'] >= previous['bb_lower']:
                     signal_direction = "SELL"
                     signal_source = SignalSource.BOLLINGER
                     signal_description = f"Ruptura bajista de Banda de Bollinger inferior"
                     confidence = 0.65
-            
+
             # 6. Patrones de Velas
-            if not signal_direction:
+            if signal_direction is None:
                 patterns = self.detect_candlestick_patterns(df)
                 
                 # Patrones alcistas
