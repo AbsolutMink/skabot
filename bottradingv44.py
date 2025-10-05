@@ -480,7 +480,23 @@ class RiskManager:
     def __init__(self):
         self.positions_data = {}
         self.daily_start_balance = 0.0
-        
+
+    def _record_position_data(self, position, sl=None, tp=None):
+        """Guarda información relevante de la posición"""
+        try:
+            open_time = datetime.fromtimestamp(position.time)
+        except Exception:
+            open_time = datetime.now()
+
+        ticket = position.ticket
+        self.positions_data[ticket] = {
+            'open_time': open_time,
+            'symbol': position.symbol,
+            'type': 'BUY' if position.type == mt5.ORDER_TYPE_BUY else 'SELL',
+            'sl': position.sl if sl is None else sl,
+            'tp': position.tp if tp is None else tp
+        }
+
     def check_daily_drawdown(self) -> bool:
         """Verifica si se alcanzó el drawdown máximo diario"""
         try:
@@ -506,11 +522,13 @@ class RiskManager:
         try:
             symbol = position.symbol
             ticket = position.ticket
-            
+
             # Si ya tiene SL y TP, no hacer nada
             if position.sl != 0 and position.tp != 0:
+                if ticket not in self.positions_data:
+                    self._record_position_data(position)
                 return True
-            
+
             # Obtener información del símbolo
             symbol_info = mt5.symbol_info(symbol)
             if not symbol_info:
@@ -599,20 +617,14 @@ class RiskManager:
             
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
                 logging.info(f"✅ SL/TP aplicados a posición {ticket}: SL={sl:.5f}, TP={tp:.5f}")
-                
+
                 # Guardar datos de la posición
-                self.positions_data[ticket] = {
-                    'open_time': datetime.now(),
-                    'symbol': symbol,
-                    'type': 'BUY' if position.type == mt5.ORDER_TYPE_BUY else 'SELL',
-                    'sl': sl,
-                    'tp': tp
-                }
+                self._record_position_data(position, sl=sl, tp=tp)
                 return True
             else:
                 error_msg = result.comment if result else 'Unknown error'
                 logging.error(f"❌ Error aplicando SL/TP a {ticket}: {error_msg}")
-                
+
                 # Si el error es por stops inválidos, intentar con valores más conservadores
                 if "Invalid stops" in error_msg or "Invalid request" in error_msg:
                     logging.info(f"Reintentando con stops más conservadores para {symbol}")
@@ -637,15 +649,9 @@ class RiskManager:
                     result = mt5.order_send(request)
                     if result and result.retcode == mt5.TRADE_RETCODE_DONE:
                         logging.info(f"✅ SL/TP aplicados (segundo intento): SL={sl:.5f}, TP={tp:.5f}")
-                        self.positions_data[ticket] = {
-                            'open_time': datetime.now(),
-                            'symbol': symbol,
-                            'type': 'BUY' if position.type == mt5.ORDER_TYPE_BUY else 'SELL',
-                            'sl': sl,
-                            'tp': tp
-                        }
+                        self._record_position_data(position, sl=sl, tp=tp)
                         return True
-                        
+
                 return False
                 
         except Exception as e:
@@ -656,16 +662,24 @@ class RiskManager:
         """Verifica si una posición excedió el tiempo límite"""
         try:
             ticket = position.ticket
-            
-            if ticket in self.positions_data:
-                open_time = self.positions_data[ticket]['open_time']
+
+            if ticket not in self.positions_data:
+                self._record_position_data(position)
+
+            data = self.positions_data.get(ticket)
+            if not data or 'open_time' not in data:
+                return False
+
+            open_time = data['open_time']
+
+            if isinstance(open_time, datetime):
                 time_elapsed = (datetime.now() - open_time).total_seconds() / 60
-                
+
                 if time_elapsed >= TradingConfig.MAX_TRADE_DURATION:
                     return True
-                    
+
             return False
-            
+
         except Exception as e:
             logging.error(f"Error verificando tiempo límite: {e}")
             return False
