@@ -20,6 +20,67 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+
+class ConfigurationError(RuntimeError):
+    """Excepción lanzada cuando falta información de configuración obligatoria."""
+
+
+def load_env_file(file_path: Optional[str] = None) -> None:
+    """Carga variables de entorno desde un archivo .env sencillo si existe.
+
+    El archivo puede definirse mediante la variable `SKABOT_ENV_FILE` y por
+    defecto se busca un archivo `.env` en el directorio raíz del proyecto.
+    Las variables ya presentes en el entorno tienen prioridad y no se
+    sobrescriben.
+    """
+
+    env_path = file_path or os.getenv("SKABOT_ENV_FILE", ".env")
+    if not env_path or not os.path.isfile(env_path):
+        return
+
+    try:
+        with open(env_path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                os.environ.setdefault(key, value)
+    except OSError:
+        # Si no se puede leer el archivo, se continúa con las variables ya
+        # disponibles en el entorno.
+        pass
+
+
+load_env_file()
+
+
+def _get_optional_int(var_name: str, default: Optional[int] = None) -> Optional[int]:
+    """Obtiene una variable de entorno entera opcional."""
+
+    raw_value = os.getenv(var_name)
+    if raw_value in (None, ""):
+        return default
+
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise ConfigurationError(
+            f"El valor de {var_name} debe ser un número entero válido."
+        ) from exc
+
+
+def _get_optional_str(var_name: str) -> Optional[str]:
+    value = os.getenv(var_name)
+    if value in (None, ""):
+        return None
+    return value
+
 import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
@@ -28,11 +89,11 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ===== CREDENCIALES MT5 =====
 class MT5Config:
-    LOGIN = 40376616
-    PASSWORD = "SeruGir@n36"
-    SERVER = "Deriv-Demo"
-    TIMEOUT = 60000
-    MAGIC_NUMBER = 234567
+    LOGIN = _get_optional_int("MT5_LOGIN")
+    PASSWORD = _get_optional_str("MT5_PASSWORD")
+    SERVER = _get_optional_str("MT5_SERVER")
+    TIMEOUT = _get_optional_int("MT5_TIMEOUT", default=60000)
+    MAGIC_NUMBER = _get_optional_int("MT5_MAGIC_NUMBER", default=234567)
 
 # ===== MODO DE OPERACIÓN =====
 class OperationMode(Enum):
@@ -85,8 +146,32 @@ class TradingConfig:
     ATR_PERIOD = 14
 
 # ===== CREDENCIALES TELEGRAM =====
-TELEGRAM_TOKEN = "8335797861:AAFhkConjYEsTKCBfFfP248rLKEoLCeYE1A"
-CHAT_ID = "1565589354"
+TELEGRAM_TOKEN = _get_optional_str("TELEGRAM_TOKEN")
+CHAT_ID = _get_optional_str("TELEGRAM_CHAT_ID")
+
+
+def validate_required_credentials() -> None:
+    """Valida que todas las credenciales obligatorias estén presentes."""
+
+    missing: List[str] = []
+
+    if MT5Config.LOGIN is None:
+        missing.append("MT5_LOGIN")
+    if not MT5Config.PASSWORD:
+        missing.append("MT5_PASSWORD")
+    if not MT5Config.SERVER:
+        missing.append("MT5_SERVER")
+    if not TELEGRAM_TOKEN:
+        missing.append("TELEGRAM_TOKEN")
+    if not CHAT_ID:
+        missing.append("TELEGRAM_CHAT_ID")
+
+    if missing:
+        formatted = ", ".join(missing)
+        raise ConfigurationError(
+            "Faltan credenciales requeridas. Configura las variables de "
+            f"entorno o un archivo .env con: {formatted}"
+        )
 
 # ===== CONTROL DEL BOT =====
 class BotController:
@@ -1241,6 +1326,12 @@ if __name__ == "__main__":
     print("  ✅ Gestión de riesgo avanzada")
     print("  ✅ Detección de patrones de velas")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    
+
+    try:
+        validate_required_credentials()
+    except ConfigurationError as config_error:
+        print(f"❌ Configuración incompleta: {config_error}")
+        sys.exit(1)
+
     bot = TradingBotV43()
     asyncio.run(bot.run())
